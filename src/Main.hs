@@ -1,7 +1,7 @@
 module Main where
+import Control.Monad (when)
 import Data.List
 import System.Environment (getArgs)
-import Control.Monad (when)
 
 main :: IO ()
 main = do
@@ -11,7 +11,6 @@ main = do
   moduleInfos <- getModuleInfos True elmFiles
   let dotSource = renderModuleDependenciesDotFile moduleInfos
   writeFile "dependencies.dot" dotSource
-
 
 renderModuleDependenciesDotFile :: [ModuleInfo] ->  String
 renderModuleDependenciesDotFile mis =
@@ -31,7 +30,7 @@ removeExternalModules mis =
 
 getModuleInfo :: FilePath -> IO ModuleInfo
 getModuleInfo f =
-   getInfo <$> readFile f
+   getInfo f <$> readFile f
 
 
 data ModuleInfo = ModuleInfo String [String] deriving Show
@@ -40,22 +39,24 @@ renderGraphvizLine ::ModuleInfo -> String
 renderGraphvizLine (ModuleInfo modName dependsOnModules) =
   show modName ++ "-> {" ++ intercalate "," (map show dependsOnModules) ++ "}"
 
-getInfo :: String -> ModuleInfo
-getInfo elmSource =
+getInfo :: FilePath -> String -> ModuleInfo
+getInfo file elmSource =
   let ls = lines elmSource
-  in ModuleInfo (getModuleName ls) (getImportedModuleNames ls)
+  in ModuleInfo (getModuleName file ls) (getImportedModuleNames ls)
 
-getModuleName :: [String] -> String
-getModuleName sourceFileLines =
-  case filter (\line -> "module" `isPrefixOf` line) sourceFileLines of
-    [] -> error "Failed to find module declaration"
-    (moduleLine:_) -> extractSecondWord moduleLine
-
-extractSecondWord :: String -> String
-extractSecondWord str = case words str of
-   (_: secondWord:_) -> secondWord
-   _ -> error $ "String " ++ str ++ " doesn't have second word"
+getModuleName :: FilePath -> [String] -> String
+getModuleName file sourceFileLines =
+  case filter (\line -> "module" `isPrefixOf` line || "port module" `isPrefixOf` line) sourceFileLines of
+    []             -> error $ "Failed to find module declaration in " ++ file
+    (moduleLine:_) -> extractModuleName moduleLine
 
 getImportedModuleNames :: [String] -> [String]
 getImportedModuleNames sourceFileLines =
-  map extractSecondWord $ filter (\line -> "import" `isPrefixOf` line) sourceFileLines
+  map extractModuleName $ filter (\line -> "import" `isPrefixOf` line) sourceFileLines
+
+extractModuleName :: String -> String
+extractModuleName str = case words str of
+  ("module":name:_) -> name
+  ("port":"module":name:_) -> name
+  ("import":name:_) -> name
+  _ -> error $ "Line '" ++ str ++ "' doesn't seem to have module name"
